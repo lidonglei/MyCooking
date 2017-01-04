@@ -1,33 +1,97 @@
-# MyCooking
-CookingAPP
-Abstract  (在android 应用中性能缺陷的静态检测)
-For static analysis researchers, Android software presents a wide variety of interesting challenges. The target of our work is static detection of energy-drain defects in Android applications. The management of energy-intensive resources (e.g., GPS) creates various opportunities for software defects.
-
-  Our goal is to detect statically “missing deactivation” energy drain defects in the user interface of the application. First, we define precisely two patterns of run-time energy-drain behaviors, based on modeling of Android GUI control-flow paths and energy-related listener leaks along such paths. Next, we define a static detection algorithm targeting these patterns. The analysis considers valid interprocedural control-flow paths in a callback method and its transitive
-callees, in order to detect operations that add or remove listeners. Sequences of callbacks are then analyzed for possible listener leaks. Our evaluation considers the detection of GUI-related energy-drain defects reported in prior work, as well as new defects not discovered by prior approaches. In summary, the detection is
-very effective and precise, suggesting that the proposed analysis is suitable for practical use in static checking tools for Android.
-
- Categories and Subject Descriptors   F.3.2 [Logics and Meaning of Programs]: Semantics of Programming Languages—Program analysis
-General Terms  Algorithms, experimentation, measurement
-Keywords  Android, GUI analysis, static analysis, energy
-
-1. Introduction
-The computing field has changed significantly in the last few years due to the exponential growth in the number of mobile devices such as smartphones and tablets. In this space, Android is the dominant platform [12]. For static analysis researchers, Android software presents a wide variety of interesting challenges, both in terms of foundational control-flow and data-flow analysis techniques and
-in terms of specific analyses targeting software correctness, robustness, performance, and security.
-The target of our work is static detection of energy-drain defects in Android applications. For mobile devices, the management of energy-intensive resources （e.g GPS) burdens the developer with “power-encumbered programming” [36] and creates various opportunities for software defects. Static detection of such defects is of significant value. Common battery-drain defects—“no-sleep” [36]
-and “missing deactivation” [4, 27]—are due to executions along which an energy-draining resource is activated but not properly deactivated. Such dynamic behaviors can be naturally stated as properties of control-flow paths, and thus present desirable targets for static control-flow and data-flow analyses. 
-
-  State of the art  Despite the clear importance of energy-drain defects, there is limited understanding of how to detect such defects with the help of program analysis. Early work on this topic [36] defines a data-flow analysis to identify relevant API calls that turn on some energy-draining resource, and to search for no-sleep code paths along which corresponding turn-off/release calls are missing.
-For this approach the control-flow analysis of possible execution paths is of critical importance. However, due to the GUI-based and event-driven nature of Android applications and the complex interactions between application code and framework code through sequences of callbacks, static control-flow modeling is a very challenging problem. This prior work employs an ad hoc control-flow analysis that exhibits significant lack of generality and precision, and involves manual effort by the user. An alternative is to use dynamic analyses to detect certain categories of energy-drain defects [4, 27]. Such defects also correspond to execution paths in
-which a sensor (e.g., the GPS) is not put to sleep appropriately, often because of mismanagement of complex callbacks from the Android framework to the application code. However, such run-time detection critically depends on the ability to trigger the problematic behavior. This requires comprehensive GUI run-time exploration, which is a very challenging problem for an automated analysis [8].
-It is highly desirable to develop static analyses that employ general control-flow modeling of all possible run-time behaviors, together with detection of the energy-drain patterns along such behaviors.
-
-  Our proposal  We aim to develop a general static analysis approach for detecting certain common categories of energy-drain defects. Specifically, we aim to detect “missing deactivation” behaviors in the user interface thread of the application. This is the main thread of the application and the majority of application logic is executed in it. While such problematic behaviors may also occur in threads running concurrently with the UI thread, the current state of the art for control-flow analysis of multithreaded Android control flow is still very underdeveloped and there is no conceptual clarity on how Android-specific asynchronous constructs (e.g., asynchronous tasks and long-running services) should be modeled statically. Thus, in our current work we focus only on the behavior of the UI thread and the callbacks executed in that thread. Due to recent advances in static control-flow analysis of Android UI behavior [48], the development of static detectors for such energydrain defects is feasible for the first time. Future work on more general static control-flow analysis for multithreaded Android executions will also enable generalizations of our current techniques to additional categories of energy-drain defects.
-
-  The proposed approach is based on three key contributions. First, we define precisely two patterns of run-time energy-drain behaviors �Section 2). The definition is based on formal definitions of relevant aspects of Android GUI run-time control flow, including modeling of GUI events, event handlers, transitions between windows, and the associated sequences of callbacks. This modeling allows us to define the notion of a leaking control-flow path and two defect patterns based on it. These patterns are related to the �mis)use of Android location awareness capabilities �e.g., GPS location information). Location awareness is a major contributor to energy drain [16] and in prior work on dynamic defect detection [27] has been identified as the predominant cause of energy-related defects in UI behavior. Our definition of defect patterns is motivated by case studies from this prior work and by our own analysis of these case studies. However, our careful formulation of these patterns is new and provides a valuable contribution to the state of the art. Furthermore, our control-flow modeling is significantly more general than any prior technique.
-  
-  The second contribution of our approach is a static defect detection algorithm �Section 3). As a starting point, we use the window transition graph �WTG), a static GUI control-flow model we proposed in prior work [48]. Based on this model, the analysis considers valid interprocedural control-flow paths in each callback
-  
-  method and its transitive callees, in order to detect operations that add or remove location listeners. Sequences of window transitions and their callbacks are then analyzed for possible listener leaking behaviors based on the two patterns mentioned earlier.
-The final contribution of our work is a study of the effectiveness of the proposed static detection �Section 4). We aim to determine how well the analysis discovers GUI-related energy-drain defects reported in prior work, as well as new defects not discovered by prior approaches. Our evaluation on 15 Android applications indicates that the static detection is very effective and is superior
-to dynamic detection. Furthermore, all but one of the reported problems are real defects. The evaluation also shows that the cost of the analysis is low. This high precision and low cost suggest that the proposed approach is suitable for practical use in static checking tools for Android.
+Callbacks Each e ∈ Event triggers a sequence of callback
+invocations that can be abstracted as [c1�o1][c2�o2] . . . [cm�om].
+Here ci is a callback method defined by the application, and oi
+is a run-time object on which ci was triggered. Note that each
+of these invocations completes before the next one starts—that is,
+their lifetimes are not nested within each other, but rather they are
+disjoint. The actual invocations are performed by event-processing
+logic implemented inside the Android framework code.
+We consider two categories of callbacks. Widget event handler
+callbacks respond to widget events; an example is onClick in Figure
+2. Lifecycle callbacks are used for lifetime management of
+windows. For example, creation callback onCreate indicates the
+start of the activity’s lifetime, and termination callback onDestroy
+indicates end of lifetime. Menus and dialogs can also have create/
+terminate callbacks.
+� Example: In Figure 2 event [br�click ] �br is the Button
+object referenced by btnRun) will cause a widget event handler
+callback invocation [onClick�br]. In this example the callback
+sequence contains only this invocation. However, for the sake
+of the example, suppose that onClick invoked an Android API
+call to start some new activity a. Also, for illustration, suppose
+that the source activity DemoLauncher and the target activity a
+both define the full range of activity lifecycle callbacks �listed for
+completeness at lines 6–7 in Figure 2). Then the callback invocation
+sequence would be [onClick�br][onPause�DemoLauncher]
+[onCreate�a][onStart�a][onResume�a][onStop�DemoLauncher];
+this sequence can be observed via android.os.Debug tracing.
+If after [br�click ] the next event was [a�back]—that is, the
+BACK button was pressed to close a and return to DemoLauncher—
+the sequence would be [onPause�a] [onRestart�DemoLauncher]
+[onStart�DemoLauncher][onResume�DemoLauncher][onStop�a]
+[onDestroy�a]. As seen from these examples, there can be a nontrivial
+sequence of callback invocations in response to a single GUI
+event. �
+Window transitions We use the term run-time window transition
+to denote a pair t = [w�w�] ∈ Win × Win showing that when
+window w was active and interacting with the user, a GUI event
+occurred that caused the new active window to be w� �w� may
+be the same as w). Each transition t is associated with the event
+��t) ∈ Event that caused the transition and with σ�t), a sequence
+of callback invocations [ci�oi].
+There are two categories of callback invocation sequences for
+Android GUI transitions. The first case is when event ��t) is a
+widget event [v�k] where v is a widget in the currently-active
+window w. In this case σ�t) starts with [c1�v] where c1 is the
+callback responsible for handling events of type k on v. The rest
+of the sequence contains [ci�wi] with ci being a lifecycle callback
+on some window wi. In general, the windows wi whose lifecycles
+are affected include the source window w, the target window w�, as
+well as other related windows �e.g., the owner activity of w). In the
+running example, a self-transition t for DemoLauncher is triggered
+by event [br�click ], resulting in σ�t) = [onClick�br]. Following
+the hypothetical example from above, if onClick opens another
+activity a, the transition would be from DemoLauncher to a, with
+σ�t) as listed above: [onClick�br] . . . [onStop�DemoLauncher].
+The second category of callback sequences is when ��t) is a default
+event [w�k] on the current window w. In this case all elements
+of σ�t) involve lifecycle callbacks. For example, event home on
+DemoLauncher triggers a self-transition t with σ�t) containing invocations
+of onPause� onStop� onRestart� onStart� onResume
+on that activity. Additional details of the structure of these callback
+sequences are presented in our earlier work [46, 48].
+Window stack Each transition t may open new windows and/or
+close existing ones. This behavior can be modeled with a window
+stack: the stack of currently-active windows.2 Each transition
+t can modify the stack by performing window push/pop sequences.
+These effects will be denoted by δ�t) ∈ ��push� pop} ×Win)�.
+In the examples presented in this paper, the effects of a transition t
+are relatively simple: for example, opening a new window w represented
+by push w, or closing the current window w represented by
+pop w. In the simplest case, as in the self-transition t from Figure 2,
+δ�t) is empty. However, our prior work [48] shows that in general
+these effects are more complex: δ�t) could be a �possibly empty)
+sequence of window pop operations, followed by an optional push
+operation. These operations could involve several windows and can
+trigger complicated callback sequences.
+Transition sequences Consider any sequence of transitions T =
+�t1� t2� . . . � tn� such that the target of ti is the same as the source of
+ti�1. Let σ�T) be the concatenation of callback sequences σ�ti);
+similarly, let δ�T) be the concatenation of window stack update
+sequences δ�ti). Sequence T is valid if δ�T) is a string in a
+standard context-free language [39] defined by
+Valid → �alanced Valid | push wi Valid | �
+where �alanced describes balanced sequences of matching push
+and pop operations
+�alanced → �alanced �alanced | push wi �alanced pop wi | �
+2.2 Adding and Removing of Listeners
+The callbacks invoked during window transitions can perform a variety
+of actions. Our work considers actions that may affect energy
+consumption. In particular, we focus on add-listener and removelistener
+operations related to location awareness. Such actions have
+been considered by GreenDroid [27], an existing dynamic analysis
+tool for detection of energy defects in Android applications. Since
+almost all GUI-related energy-drain defects reported in this prior
+work are due to location awareness, focusing on such defects allows
+us to perform direct comparison with the results from this
+existing study.
